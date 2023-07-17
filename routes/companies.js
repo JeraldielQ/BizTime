@@ -13,21 +13,33 @@ router.get('/', async (req, res, next) => {
     }
   });
   
-router.get('/:code', async (req, res, next) => {
+  router.get('/:code', async (req, res, next) => {
     try {
       const { code } = req.params;
-      const result = await db.query('SELECT * FROM companies WHERE code = $1', [code]);
   
-      if (result.rows.length === 0) {
+      const companyResult = await db.query(
+        'SELECT * FROM companies LEFT JOIN company_industries ON companies.code = company_industries.company_code LEFT JOIN industries ON industries.code = company_industries.industry_code WHERE companies.code = $1',
+        [code]
+      );
+  
+      if (companyResult.rows.length === 0) {
         throw new ExpressError(`Company with code '${code}' not found`, 404);
       }
   
-      const company = result.rows[0];
+      const company = companyResult.rows[0];
+      const industries = companyResult.rows.map(row => ({
+        code: row.industry_code,
+        industry: row.industry
+      }));
+  
+      company.industries = industries;
+  
       return res.json({ company });
     } catch (e) {
       return next(e);
     }
   });
+  
 
 router.post('/', async (req, res, next) => {
     try {
@@ -79,6 +91,52 @@ router.delete('/:code', async (req, res, next) => {
     }
   });
   
+  router.post('/industries', async (req, res, next) => {
+    try {
+      const { code, industry } = req.body;
+  
+      const result = await db.query(
+        'INSERT INTO industries (code, industry) VALUES ($1, $2) RETURNING code, industry',
+        [code, industry]
+      );
+  
+      const newIndustry = result.rows[0];
+  
+      return res.status(201).json({ industry: newIndustry });
+    } catch (e) {
+      return next(e);
+    }
+  });
+
+  router.get('/industries', async (req, res, next) => {
+    try {
+      const result = await db.query(
+        'SELECT industries.code, industries.industry, array_agg(company_industries.company_code) AS company_codes FROM industries LEFT JOIN company_industries ON industries.code = company_industries.industry_code GROUP BY industries.code, industries.industry'
+      );
+  
+      const industries = result.rows;
+  
+      return res.json({ industries });
+    } catch (e) {
+      return next(e);
+    }
+  });
+
+  router.post('/:code/industries', async (req, res, next) => {
+    try {
+      const { code } = req.params;
+      const { industryCode } = req.body;
+  
+      const result = await db.query(
+        'INSERT INTO company_industries (company_code, industry_code) VALUES ($1, $2)',
+        [code, industryCode]
+      );
+  
+      return res.status(201).json({ message: 'Industry associated with company successfully' });
+    } catch (e) {
+      return next(e);
+    }
+  });
 
 
 
